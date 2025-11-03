@@ -57,7 +57,6 @@ def menu_principal(funciones):
         if opcion_elegida in funciones:
             funciones.get(opcion_elegida)(base_datos, opcion_elegida)
         elif opcion_elegida == "7":
-            print(base_datos)
             break
         else:
             print(OPCION_INVALIDA)
@@ -213,7 +212,6 @@ def listar_colaboradores_directos(base_datos, nombre):
             talentos_encontrados.append(talento)
     if not talentos_encontrados:
         print(COLABORADORES_DIRECTOS_INEXISTENTES)
-        return None
     return talentos_encontrados
 
 
@@ -228,24 +226,42 @@ def imprimir_talentos(lista, opcion_elegida):
         print(f"{i+1}. {talento}")
 
 
+def listar_nuevos_colaboradores(base_datos, colaborador):
+    nuevos_colaboradores = listar_colaboradores_directos(base_datos, colaborador)
+    if colaborador in nuevos_colaboradores:
+        nuevos_colaboradores.remove(colaborador)
+    return nuevos_colaboradores
+
+
+def procesar_talentos_compatibles(
+    nuevos_colaboradores, nombre, colaboradores_directos, talentos_compatibles
+):
+    for talento in nuevos_colaboradores:
+        if (
+            talento not in talentos_compatibles
+            and talento != nombre
+            and talento not in colaboradores_directos
+        ):
+            talentos_compatibles.append(talento)
+
+
 def _listar_talentos_compatibles(
     base_datos, nombre, colaboradores_directos, talentos_compatibles, procesados
 ):
-    if nombre not in procesados:
-        procesados.append(nombre)
     for colaborador_directo in colaboradores_directos:
         if colaborador_directo in procesados:
             continue
         procesados.append(colaborador_directo)
-        nuevos_colaboradores = listar_colaboradores_directos(
+
+        nuevos_colaboradores = listar_nuevos_colaboradores(
             base_datos, colaborador_directo
         )
-        if nombre in nuevos_colaboradores:
-            nuevos_colaboradores.remove(nombre)
+        if not nuevos_colaboradores:
+            continue
 
-        for talento in nuevos_colaboradores:
-            if talento not in talentos_compatibles:
-                talentos_compatibles.append(talento)
+        procesar_talentos_compatibles(
+            nuevos_colaboradores, nombre, colaboradores_directos, talentos_compatibles
+        )
 
         _listar_talentos_compatibles(
             base_datos,
@@ -254,14 +270,62 @@ def _listar_talentos_compatibles(
             talentos_compatibles,
             procesados,
         )
+
     return talentos_compatibles
 
 
 def listar_talentos_compatibles(base_datos, nombre):
     colaboradores_directos = listar_colaboradores_directos(base_datos, nombre)
-    return _listar_talentos_compatibles(
-        base_datos, nombre, colaboradores_directos, [], []
+    if not colaboradores_directos:
+        return []
+    talentos_compatibles = _listar_talentos_compatibles(
+        base_datos, nombre, colaboradores_directos, [], [nombre]
     )
+    if not talentos_compatibles:
+        print(TALENTOS_COMPATIBLES_INEXISTENTES)
+    return talentos_compatibles
+
+
+def listar_talentos_totales(base_datos):
+    talentos = []
+    for pelicula in base_datos["peliculas"].values():
+        for talento in pelicula["talentos"]:
+            if talento not in talentos:
+                talentos.append(talento)
+    return talentos
+
+
+def _listar_talentos_incompatibles(base_datos, nombre, incompatibles, procesados):
+
+    colaboradores_directos = listar_colaboradores_directos(base_datos, nombre)
+    compatibles = listar_talentos_compatibles(base_datos, nombre)
+    for colaborador in colaboradores_directos:
+
+        if talento not in procesados:
+            if (
+                talento not in compatibles
+                and talento not in colaboradores_directos
+                and talento != nombre
+            ):
+                incompatibles.append(talento)
+            procesados.append(talento)
+            _listar_talentos_incompatibles(
+                base_datos,
+                talento,
+                incompatibles,
+                procesados,
+            )
+    return incompatibles
+
+
+def listar_talentos_incompatibles(base_datos, nombre):
+
+    talentos_incompatibles = _listar_talentos_incompatibles(
+        base_datos, nombre, [], [nombre]
+    )
+    if not talentos_incompatibles:
+        print(TALENTOS_INCOMPATIBLES_INEXISTENTES)
+    return talentos_incompatibles
 
 
 def listar(base_datos, opcion_elegida):
@@ -274,7 +338,7 @@ def listar(base_datos, opcion_elegida):
         talentos_encontrados = listar_talentos_compatibles(base_datos, nombre)
     else:
         talentos_encontrados = listar_talentos_incompatibles(base_datos, nombre)
-    if talentos_encontrados is None:
+    if not talentos_encontrados:
         return
     imprimir_talentos(sorted(talentos_encontrados), opcion_elegida)
 
@@ -284,7 +348,7 @@ FUNCIONES = {
     OPCIONES[1]: cargar_datos,
     OPCIONES[2]: listar,
     OPCIONES[3]: listar,
-    # OPCIONES[4]: listar,
+    OPCIONES[4]: listar,
     # OPCIONES[5]: exportar_talentos_mayor_recaudacion,
 }
 
@@ -295,4 +359,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
