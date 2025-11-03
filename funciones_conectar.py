@@ -1,5 +1,7 @@
 """Constantes de Agencia Conectar."""
 
+import os
+
 ERROR_IMPORTACION = "El/los archivos a importar deben existir y ser CSV válidos"
 ERROR_EXPORTACION = "Error en la exportación"
 ERROR_TALENTO_NO_ENCONTRADO = "Talento no existente"
@@ -28,7 +30,7 @@ TALENTOS_INCOMPATIBLES = "Talentos incompatibles:"
 
 OPCION_RETROCEDER = "**"
 
-MENU_PRINCIPAL = """1) Cargar películas 
+MENU_PRINCIPAL = """1) Cargar películas
 2) Cargar información de ventas 
 3) Listar colaboraciones directas 
 4) Listar talentos compatibles 
@@ -37,10 +39,15 @@ MENU_PRINCIPAL = """1) Cargar películas
 7) Salir
 >>> """
 
+
 OPCIONES = ["1", "2", "3", "4", "5", "6", "7"]
 
 
-MSG_INGRESO = "Ingrese el archivo de películas a cargar: "
+MSG_INGRESO_PELICULAS = "Ingrese el archivo de películas a cargar: "
+MSG_INGRESO_VENTAS = "Ingrese el archivo de ventas a cargar: "
+MSG_INGRESO_NOMBRE = "Ingrese el nombre de un talento: "
+INVALIDO = "invalido"
+INEXISTENTE = "inexistente"
 
 
 def menu_principal(funciones):
@@ -48,16 +55,13 @@ def menu_principal(funciones):
     while True:
         opcion_elegida = input(MENU_PRINCIPAL)
         if opcion_elegida in funciones:
-            funciones.get(opcion_elegida)(base_datos)
+            funciones.get(opcion_elegida)(base_datos, opcion_elegida)
         elif opcion_elegida == "7":
             print(base_datos)
             break
         else:
             print(OPCION_INVALIDA)
             continue
-
-
-import os
 
 
 def validar_ruta(ruta: str) -> bool:
@@ -72,11 +76,13 @@ def validar_ruta(ruta: str) -> bool:
     return False
 
 
-def ingresar_rutas():
+def ingresar_rutas(tipo):
     while True:
-        ingreso = input(MSG_INGRESO)
+        ingreso = input(
+            MSG_INGRESO_PELICULAS if tipo == OPCIONES[0] else MSG_INGRESO_VENTAS
+        )
         if ingreso == OPCION_RETROCEDER:
-            return
+            return None
         rutas = ingreso.split()
         for ruta in rutas:
             if not validar_ruta(ruta):
@@ -96,71 +102,194 @@ def acceder_directorios(rutas):
                     rutas.append(subruta)
 
 
-def ingresar_peliculas(archivo, base_datos, contador):
+def ingresar_datos(archivo, base_datos, contador, tipo):
     for linea in archivo:
         datos = linea.split(",")
-        if datos[0] in base_datos["peliculas"]:
-            print(PELICULA_DUPLICADA + f" {datos[0]}")
-            continue
-        base_datos["peliculas"][datos[0]] = {
-            "precio": datos[1],
-            "actores": datos[2].rstrip("\n").split(";"),
-        }
+        if tipo == "pelicula":
+            if datos[0] in base_datos["peliculas"]:
+                print(PELICULA_DUPLICADA + f" {datos[0]}")
+                continue
+            base_datos["peliculas"][datos[0]] = {
+                "precio": datos[1],
+                "talentos": datos[2].rstrip("\n").split(";"),
+            }
+        else:
+            if datos[0] not in base_datos["peliculas"]:
+                print(PELICULA_INEXISTENTE + f"{datos[0]}")
+                continue
+            base_datos["ventas"][datos[0]] = base_datos["ventas"].get(
+                datos[0], 0
+            ) + int(datos[1].rstrip("\n"))
         contador += 1
     return contador
 
 
-def ingresar_ventas(archivo, base_datos, contador):
-    for linea in archivo:
-        datos = linea.split(",")
-        if datos[0] not in base_datos["peliculas"]:
-            print(PELICULA_INEXISTENTE + f"{datos[0]}")
-            continue
-        base_datos["ventas"][datos[0]] = datos[1]
-        contador += 1
-    return contador
-
-
-def cargar_datos(rutas, base_datos, tipo):
+def procesar_datos(rutas, base_datos, tipo):
     contador = 0
     for ruta in rutas:
-        try:
-            with open(ruta, "r", encoding="utf8") as archivo:
-                archivo.readline()  # Se saltea el header
-                if tipo == "pelicula":
-                    contador = ingresar_peliculas(archivo, base_datos, contador)
-                else:
-                    contador = ingresar_ventas(archivo, base_datos, contador)
-        except PermissionError as e_permisos:
-            raise e_permisos
-        except FileNotFoundError as e_fnf:
-            raise e_fnf
+        with open(ruta, "r", encoding="utf8") as archivo:
+            archivo.readline()  # Saltear el header
+            contador = ingresar_datos(archivo, base_datos, contador, tipo)
     return contador
 
 
-def cargar_peliculas(base_datos):
-    rutas = ingresar_rutas()
+def cargar_datos(base_datos, tipo):
+    rutas = ingresar_rutas(tipo)
+    if rutas is None:
+        return
     acceder_directorios(rutas)
     try:
-        peliculas_cargadas = cargar_datos(rutas, base_datos, "pelicula")
-    except PermissionError:
+        datos_cargados = procesar_datos(
+            rutas, base_datos, "pelicula" if tipo == OPCIONES[0] else "venta"
+        )
+        if datos_cargados is None:
+            return
+    except (PermissionError, FileNotFoundError, OSError):
         return
-    except FileNotFoundError:
-        return
-    print("OK " + str(peliculas_cargadas))
+    print("OK " + str(datos_cargados))
 
 
-# def cargar_ventas(base_datos):
+def normalizar_nombre(nombre):
+    tildes = {
+        "á": "a",
+        "é": "e",
+        "í": "i",
+        "ó": "o",
+        "ú": "u",
+        "Á": "A",
+        "É": "E",
+        "Í": "I",
+        "Ó": "O",
+        "Ú": "U",
+        "ñ": "n",
+        "Ñ": "N",
+    }
+    for letra, reemplazo in tildes.items():
+        nombre = nombre.replace(letra, reemplazo)
+    return nombre.lower()
+
+
+def clasificar_nombre(nombre, base_datos):
+    nombre_normalizado_sin_espacios = normalizar_nombre(nombre).replace(" ", "")
+    if (
+        not nombre_normalizado_sin_espacios
+        or not nombre_normalizado_sin_espacios.isalpha()
+    ):
+        return INVALIDO
+    peliculas = base_datos["peliculas"]
+    for pelicula in peliculas.values():
+        talentos = pelicula["talentos"]
+        for talento in talentos:
+            if normalizar_nombre(nombre) == normalizar_nombre(talento):
+                return talento
+    return INEXISTENTE
+
+
+def pedir_nombre(base_datos) -> str:
+    while True:
+        ingreso = input(MSG_INGRESO_NOMBRE)
+        if ingreso == OPCION_RETROCEDER:
+            return None
+        clasificacion = clasificar_nombre(ingreso, base_datos)
+        if clasificacion == INVALIDO:
+            print(ERROR_NOMBRE_TALENTO_INVALIDO)
+            continue
+        if clasificacion == INEXISTENTE:
+            print(ERROR_TALENTO_NO_ENCONTRADO)
+            continue
+        return clasificacion
+
+
+def listar_colaboradores_directos(base_datos, nombre):
+    talentos_encontrados = []
+    for pelicula in base_datos["peliculas"].values():
+        if nombre not in pelicula["talentos"]:
+            continue
+        lista = pelicula["talentos"][::]
+        lista.remove(nombre)
+        for talento in lista:
+            if talento in talentos_encontrados:
+                continue
+            talentos_encontrados.append(talento)
+    if not talentos_encontrados:
+        print(COLABORADORES_DIRECTOS_INEXISTENTES)
+        return None
+    return talentos_encontrados
+
+
+def imprimir_talentos(lista, opcion_elegida):
+    if opcion_elegida == OPCIONES[2]:
+        print(COLABORADORES_DIRECTOS)
+    elif opcion_elegida == OPCIONES[3]:
+        print(TALENTOS_COMPATIBLES)
+    else:
+        print(TALENTOS_INCOMPATIBLES)
+    for i, talento in enumerate(lista):
+        print(f"{i+1}. {talento}")
+
+
+def _listar_talentos_compatibles(
+    base_datos, nombre, colaboradores_directos, talentos_compatibles, procesados
+):
+    for colaborador_directo in colaboradores_directos:
+        if colaborador_directo in procesados:
+            continue
+        procesados.append(nombre)
+        nuevos_colaboradores = listar_colaboradores_directos(
+            base_datos, colaborador_directo
+        )
+        if nombre in nuevos_colaboradores:
+            nuevos_colaboradores.remove(nombre)
+
+        for talento in nuevos_colaboradores:
+            if talento not in talentos_compatibles:
+                talentos_compatibles.append(talento)
+
+        _listar_talentos_compatibles(
+            base_datos,
+            colaborador_directo,
+            nuevos_colaboradores,
+            talentos_compatibles,
+            procesados,
+        )
+    return talentos_compatibles
+
+
+def listar_talentos_compatibles(base_datos, nombre):
+    colaboradores_directos = listar_colaboradores_directos(base_datos, nombre)
+    return _listar_talentos_compatibles(
+        base_datos, nombre, colaboradores_directos, [], []
+    )
+
+
+def listar(base_datos, opcion_elegida):
+    nombre = pedir_nombre(base_datos)
+    if nombre is None:
+        return
+    if opcion_elegida == OPCIONES[2]:
+        talentos_encontrados = listar_colaboradores_directos(base_datos, nombre)
+    elif opcion_elegida == OPCIONES[3]:
+        talentos_encontrados = listar_talentos_compatibles(base_datos, nombre)
+    else:
+        talentos_encontrados = listar_talentos_incompatibles(base_datos, nombre)
+    if talentos_encontrados is None:
+        return
+    imprimir_talentos(sorted(talentos_encontrados), opcion_elegida)
 
 
 FUNCIONES = {
-    OPCIONES[0]: cargar_peliculas,
-    # OPCIONES[1]: cargar_ventas,
-    # OPCIONES[2]: listar_colaboraciones_directas,
-    # OPCIONES[3]: listar_talentos_compatibles,
-    # OPCIONES[4]: listar_talentos_incompatibles,
+    OPCIONES[0]: cargar_datos,
+    OPCIONES[1]: cargar_datos,
+    OPCIONES[2]: listar,
+    OPCIONES[3]: listar,
+    # OPCIONES[4]: listar,
     # OPCIONES[5]: exportar_talentos_mayor_recaudacion,
 }
 
 
-menu_principal(FUNCIONES)
+def main():
+    menu_principal(FUNCIONES)
+
+
+if __name__ == "__main__":
+    main()
