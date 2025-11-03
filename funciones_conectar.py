@@ -231,10 +231,12 @@ def imprimir_talentos(lista, opcion_elegida):
 def _listar_talentos_compatibles(
     base_datos, nombre, colaboradores_directos, talentos_compatibles, procesados
 ):
+    if nombre not in procesados:
+        procesados.append(nombre)
     for colaborador_directo in colaboradores_directos:
         if colaborador_directo in procesados:
             continue
-        procesados.append(nombre)
+        procesados.append(colaborador_directo)
         nuevos_colaboradores = listar_colaboradores_directos(
             base_datos, colaborador_directo
         )
@@ -293,3 +295,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
